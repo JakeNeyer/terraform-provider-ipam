@@ -35,5 +35,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: set for Terraform Registry (SHA256SUMS.sig). See PUBLISHING.md.
-          # GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+          GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
