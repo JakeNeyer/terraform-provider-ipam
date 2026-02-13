@@ -1,0 +1,16 @@
+# Binaries and build artifacts (do not commit)
+terraform-provider-ipam
+terraform-provider-ipam_*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/dist/
+
+# Terraform
+*.tfstate*
+*.tfstate.*
+.terraform/
+*.tfplan
+.env
