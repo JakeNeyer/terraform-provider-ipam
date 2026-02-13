@@ -41,12 +41,12 @@ The Terraform Registry expects:
 
 2. **CI**: The GitHub Action runs GoReleaser and creates a release with binaries and `SHA256SUMS`.
 
-3. **Signing (for Registry)**: The Registry requires `SHA256SUMS.sig`. To add signing:
+3. **Signing (for Registry)**: The Registry requires `SHA256SUMS.sig`. The workflow and GoReleaser are configured to produce it. You must add two repo secrets:
 
-   - Generate a GPG key (if needed) and add the **fingerprint** as a repo secret `GPG_FINGERPRINT`.
-   - Add the **private key** as a repo secret (e.g. `GPG_PRIVATE_KEY`) and import it in the workflow before running GoReleaser.
-   - In `.goreleaser.yaml`, uncomment or add a `signs` block that signs the checksum file (see [GoReleaser signing](https://goreleaser.com/customization/sign/)).
-   - In `.github/workflows/release.yml`, set `GPG_FINGERPRINT` (and key import) in the GoReleaser step env.
+   - **`GPG_FINGERPRINT`**: The fingerprint of your GPG key (e.g. `gpg --list-secret-keys --keyid-format LONG`).
+   - **`GPG_PRIVATE_KEY`**: The ASCII-armored private key (e.g. `gpg --armor --export-secret-keys YOUR_KEY_ID`). Paste the full block including `-----BEGIN PGP PRIVATE KEY BLOCK-----` and `-----END PGP PRIVATE KEY BLOCK-----`.
+
+   Add these in GitHub: **Settings → Secrets and variables → Actions → New repository secret**. After adding both and pushing a new tag, the release will include `SHA256SUMS.sig`.
 
 4. **Publish on the Registry**: In [registry.terraform.io](https://registry.terraform.io) → **Publish** → **Provider**, connect this repo. The Registry will ingest each new release automatically.
 
