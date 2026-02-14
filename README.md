@@ -1,8 +1,10 @@
 # Terraform Provider for IPAM
 
-This [Terraform](https://www.terraform.io) provider manages resources in an [IPAM](https://github.com/JakeNeyer/ipam) instance: environments (with required initial pool), **pools**, network blocks, allocations, and reserved blocks. Hierarchy: **Environment → Pools → Blocks → Allocations**. It uses the IPAM HTTP API with Bearer token authentication.
+This [Terraform](https://www.terraform.io) provider manages resources in an [IPAM](https://github.com/JakeNeyer/ipam) instance: environments (with required initial pool), pools, network blocks, allocations, and reserved blocks. 
 
-This repository is standalone and follows [Terraform Registry publishing guidelines](https://developer.hashicorp.com/terraform/registry/providers/publishing) so the provider can be published on the [Terraform Registry](https://registry.terraform.io). See [PUBLISHING.md](PUBLISHING.md) for release and Registry setup.
+
+Hierarchy: **Environment → Pools → Blocks → Allocations**
+
 
 ## Requirements
 
