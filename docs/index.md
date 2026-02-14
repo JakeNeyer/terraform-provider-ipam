@@ -1,6 +1,9 @@
 # IPAM Provider
 
-The IPAM provider manages resources in an [IPAM](https://github.com/JakeNeyer/ipam) instance: environments, **pools**, network blocks, allocations, and reserved blocks. It uses the IPAM HTTP API with Bearer token authentication. Hierarchy: **Environment → Pools → Blocks → Allocations**; every environment has at least one pool (CIDR range blocks draw from). This provider is published on the [Terraform Registry](https://registry.terraform.io) as `jakeneyer/ipam`.
+The IPAM provider manages resources in an [IPAM](https://github.com/JakeNeyer/ipam) instance: environments, pools, network blocks, allocations, and reserved blocks.
+
+
+Hierarchy: **Environment → Pools → Blocks → Allocations**
 
 ## Authentication
 
