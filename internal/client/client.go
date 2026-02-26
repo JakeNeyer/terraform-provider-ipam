@@ -157,10 +157,11 @@ func (c *Client) CreateEnvironment(name string, pools []PoolInput) (*EnvResponse
 	return &out, nil
 }
 
-// UpdateEnvironment updates an environment.
+// UpdateEnvironment updates an environment. API requires id and name in body.
 func (c *Client) UpdateEnvironment(id, name string) (*EnvResponse, error) {
+	body := map[string]string{"id": id, "name": name}
 	var out EnvResponse
-	if err := c.put("/api/environments/"+url.PathEscape(id), map[string]string{"name": name}, &out); err != nil {
+	if err := c.put("/api/environments/"+url.PathEscape(id), body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -225,9 +226,9 @@ func (c *Client) CreateBlock(name, cidr, environmentID string, poolID *string) (
 	return &out, nil
 }
 
-// UpdateBlock updates a block.
+// UpdateBlock updates a block. API requires id and name in body.
 func (c *Client) UpdateBlock(id, name string, environmentID, poolID *string) (*BlockResponse, error) {
-	body := map[string]interface{}{"name": name}
+	body := map[string]interface{}{"id": id, "name": name}
 	if environmentID != nil {
 		body["environment_id"] = *environmentID
 	}
@@ -316,10 +317,10 @@ func (c *Client) ListAllocations(name, blockName string, limit, offset int) (*Al
 	return &out, nil
 }
 
-// GetAllocation returns a single allocation by ID.
+// GetAllocation returns a single allocation by ID. ID is normalized to lowercase for the request (UUIDs are case-insensitive per RFC 4122).
 func (c *Client) GetAllocation(id string) (*AllocationResponse, error) {
 	var out AllocationResponse
-	if err := c.get("/api/allocations/"+url.PathEscape(id), &out); err != nil {
+	if err := c.get("/api/allocations/"+url.PathEscape(strings.ToLower(id)), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -345,9 +346,10 @@ func (c *Client) AutoAllocate(name, blockName string, prefixLength int) (*Alloca
 	return &out, nil
 }
 
-// UpdateAllocation updates an allocation (name only).
+// UpdateAllocation updates an allocation (name only). API requires id and name in body. ID is normalized to lowercase.
 func (c *Client) UpdateAllocation(id, name string) (*AllocationResponse, error) {
-	body := map[string]string{"name": name}
+	id = strings.ToLower(id)
+	body := map[string]string{"id": id, "name": name}
 	var out AllocationResponse
 	if err := c.put("/api/allocations/"+url.PathEscape(id), body, &out); err != nil {
 		return nil, err
@@ -355,15 +357,19 @@ func (c *Client) UpdateAllocation(id, name string) (*AllocationResponse, error) 
 	return &out, nil
 }
 
-// DeleteAllocation deletes an allocation.
+// DeleteAllocation deletes an allocation. ID is normalized to lowercase for the request.
 func (c *Client) DeleteAllocation(id string) error {
-	return c.delete("/api/allocations/" + url.PathEscape(id))
+	return c.delete("/api/allocations/" + url.PathEscape(strings.ToLower(id)))
 }
 
-// ListReservedBlocks returns all reserved blocks (admin only).
-func (c *Client) ListReservedBlocks() (*ReservedBlockListResponse, error) {
+// ListReservedBlocks returns reserved blocks (admin only). Pass a non-empty organizationID to filter by organization.
+func (c *Client) ListReservedBlocks(organizationID string) (*ReservedBlockListResponse, error) {
+	path := "/api/reserved-blocks"
+	if organizationID != "" {
+		path += "?organization_id=" + url.QueryEscape(organizationID)
+	}
 	var out ReservedBlockListResponse
-	if err := c.get("/api/reserved-blocks", &out); err != nil {
+	if err := c.get(path, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -374,6 +380,19 @@ func (c *Client) CreateReservedBlock(name, cidr, reason string) (*ReservedBlockR
 	body := map[string]string{"name": name, "cidr": cidr, "reason": reason}
 	var out ReservedBlockResponse
 	if err := c.post("/api/reserved-blocks", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateReservedBlock updates a reserved block's metadata (name). Admin only.
+func (c *Client) UpdateReservedBlock(id, name string) (*ReservedBlockResponse, error) {
+	body := map[string]interface{}{"id": id}
+	if name != "" {
+		body["name"] = name
+	}
+	var out ReservedBlockResponse
+	if err := c.put("/api/reserved-blocks/"+url.PathEscape(id), body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -110,7 +110,7 @@ func (r *ReservedBlockResource) Read(ctx context.Context, req resource.ReadReque
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	list, err := r.api.ListReservedBlocks()
+	list, err := r.api.ListReservedBlocks("")
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
@@ -131,7 +131,26 @@ func (r *ReservedBlockResource) Read(ctx context.Context, req resource.ReadReque
 }
 
 func (r *ReservedBlockResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Unsupported", "ipam_reserved_block does not support in-place updates; change cidr to force replace")
+	var plan, state ReservedBlockResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// API supports in-place update of name only; cidr and reason are create-only.
+	if plan.Name.ValueString() != state.Name.ValueString() {
+		out, err := r.api.UpdateReservedBlock(state.Id.ValueString(), plan.Name.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("API error", err.Error())
+			return
+		}
+		state.Name = types.StringValue(out.Name)
+	}
+	// Persist reason from plan if set (API does not support updating reason; we keep config value to avoid drift)
+	if !plan.Reason.IsNull() {
+		state.Reason = plan.Reason
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *ReservedBlockResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

@@ -146,18 +146,22 @@ For publishing to the Terraform Registry (including GPG signing of checksums), s
 
 - Run unit tests (no live server):  
   `go test ./internal/client/ -v` and `go test ./internal/provider/ -v -short`
-- Run acceptance tests (requires a running IPAM server and admin API token):  
-  `IPAM_ENDPOINT=http://localhost:8011 IPAM_TOKEN=your-token go test -v -count=1 -run TestAcc ./internal/provider/...`
+- Run acceptance tests (requires TF_ACC=1, a running IPAM server, and admin API token):  
+  `TF_ACC=1 IPAM_ENDPOINT=http://localhost:5173 IPAM_TOKEN=your-token go test -v -count=1 -run TestAcc ./internal/provider/...`  
+  Or use the script: `TF_ACC=1 IPAM_TOKEN=your-token ./scripts/acc-test.sh`
 
-  **Fixtures:** Copy `env.example` to `.env`, set `IPAM_TOKEN`, then `source .env` and run the test command above. Start the IPAM server from the [IPAM repository](https://github.com/JakeNeyer/ipam) root with `go run .` (or use that repo's hack/terraform-fixtures flow).
+  **Fixtures:** Copy `env.example` to `.env`, set `TF_ACC=1` and `IPAM_TOKEN`, then `source .env` and run the test command above. Start the IPAM server from the [IPAM repository](https://github.com/JakeNeyer/ipam) root (e.g. dev server at http://localhost:5173 or `go run .`).
 
   Acceptance tests cover:
   - **TestAccProviderConfig** — provider config and `ipam_environments` data source
   - **TestAccEnvironmentResource** — create, update name, import
   - **TestAccBlockResource** — create block in environment, update name, import
   - **TestAccAllocationResource** — create allocation in block, update name, import
-  - **TestAccReservedBlockResource** — create reserved block (admin token required), import
-  - **TestAccDataSources** — single and list data sources for environment, block, allocation
+  - **TestAccReservedBlockResource** — create reserved block, update name, import (admin token required)
+  - **TestAccDataSources** — single and list data sources including allocation (requires `IPAM_RUN_ALLOCATION_TESTS=1` if your API's GET `/api/allocations/{id}` returns created allocations)
+  - **TestAccDataSourcesNoAllocation** — data sources for environment, block, pools (runs without allocation GET)
+
+  Set `IPAM_RUN_ALLOCATION_TESTS=1` to run allocation resource tests and the full data sources test when your IPAM API returns allocations from GET `/api/allocations/{id}` after create. If the API returns "not found" (e.g. org scoping), leave it unset and those tests are skipped.
 
   Ensure `IPAM_TOKEN` does not contain double quotes (`"`) to avoid breaking HCL. Reserved-block tests require an admin token.
 

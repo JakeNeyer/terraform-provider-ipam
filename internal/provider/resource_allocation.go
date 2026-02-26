@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -120,11 +121,11 @@ func (r *AllocationResource) Create(ctx context.Context, req resource.CreateRequ
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(out.Id)
+	plan.Id = types.StringValue(strings.ToLower(out.Id))
 	plan.Name = types.StringValue(out.Name)
 	plan.BlockName = types.StringValue(out.BlockName)
 	plan.Cidr = types.StringValue(out.CIDR)
-	tflog.Trace(ctx, "created ipam_allocation", map[string]interface{}{"id": out.Id, "cidr": out.CIDR})
+	tflog.Trace(ctx, "created ipam_allocation", map[string]interface{}{"id": plan.Id.ValueString(), "cidr": out.CIDR})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -136,10 +137,35 @@ func (r *AllocationResource) Read(ctx context.Context, req resource.ReadRequest,
 	}
 	out, err := r.api.GetAllocation(state.Id.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("API error", err.Error())
-		return
+		if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+			resp.Diagnostics.AddError("API error", err.Error())
+			return
+		}
+		// Fallback: some IPAM APIs do not support GET /api/allocations/{id}; find by block_name + name.
+		list, listErr := r.api.ListAllocations(state.Name.ValueString(), state.BlockName.ValueString(), 0, 0)
+		if listErr != nil {
+			resp.Diagnostics.AddError("API error", listErr.Error())
+			return
+		}
+		switch n := len(list.Allocations); n {
+		case 0:
+			resp.State.RemoveResource(ctx)
+			return
+		case 1:
+			out = &list.Allocations[0]
+		default:
+			for i := range list.Allocations {
+				if strings.EqualFold(list.Allocations[i].Id, state.Id.ValueString()) {
+					out = &list.Allocations[i]
+					break
+				}
+			}
+			if out == nil {
+				out = &list.Allocations[0]
+			}
+		}
 	}
-	state.Id = types.StringValue(out.Id)
+	state.Id = types.StringValue(strings.ToLower(out.Id))
 	state.Name = types.StringValue(out.Name)
 	state.BlockName = types.StringValue(out.BlockName)
 	state.Cidr = types.StringValue(out.CIDR)
@@ -152,12 +178,32 @@ func (r *AllocationResource) Update(ctx context.Context, req resource.UpdateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.UpdateAllocation(plan.Id.ValueString(), plan.Name.ValueString())
+	var state AllocationResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	id := plan.Id.ValueString()
+	out, err := r.api.UpdateAllocation(id, plan.Name.ValueString())
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "not found") {
+		// Fallback: resolve allocation by block_name + prior name (current name on server before update).
+		list, listErr := r.api.ListAllocations(state.Name.ValueString(), plan.BlockName.ValueString(), 0, 0)
+		if listErr != nil {
+			resp.Diagnostics.AddError("API error", listErr.Error())
+			return
+		}
+		if len(list.Allocations) != 1 {
+			resp.Diagnostics.AddError("API error", err.Error())
+			return
+		}
+		id = list.Allocations[0].Id
+		out, err = r.api.UpdateAllocation(id, plan.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(out.Id)
+	plan.Id = types.StringValue(strings.ToLower(out.Id))
 	plan.Name = types.StringValue(out.Name)
 	plan.BlockName = types.StringValue(out.BlockName)
 	plan.Cidr = types.StringValue(out.CIDR)
@@ -171,6 +217,9 @@ func (r *AllocationResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 	if err := r.api.DeleteAllocation(state.Id.ValueString()); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return
+		}
 		resp.Diagnostics.AddError("API error", err.Error())
 	}
 }

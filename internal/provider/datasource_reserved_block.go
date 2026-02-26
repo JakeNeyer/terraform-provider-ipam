@@ -78,7 +78,7 @@ func (d *ReservedBlockDataSource) Read(ctx context.Context, req datasource.ReadR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	list, err := d.api.ListReservedBlocks()
+	list, err := d.api.ListReservedBlocks("")
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return

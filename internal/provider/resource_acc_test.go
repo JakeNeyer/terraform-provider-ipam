@@ -67,7 +67,7 @@ func TestAccBlockResource(t *testing.T) {
 resource "ipam_environment" "acc" {
   name = "acc-block-env"
   pools = [
-    { name = "acc-pool", cidr = "10.0.0.0/8" }
+    { name = "acc-block-pool", cidr = "10.1.0.0/8" }
   ]
 }
 
@@ -77,7 +77,7 @@ data "ipam_pools" "acc" {
 
 resource "ipam_block" "acc" {
   name           = "acc-block"
-  cidr           = "10.100.0.0/24"
+  cidr           = "10.1.100.0/24"
   environment_id = ipam_environment.acc.id
   pool_id        = ipam_environment.acc.pool_ids[0]
 }
@@ -85,7 +85,7 @@ resource "ipam_block" "acc" {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("ipam_block.acc", "id"),
 					resource.TestCheckResourceAttr("ipam_block.acc", "name", "acc-block"),
-					resource.TestCheckResourceAttr("ipam_block.acc", "cidr", "10.100.0.0/24"),
+					resource.TestCheckResourceAttr("ipam_block.acc", "cidr", "10.1.100.0/24"),
 					resource.TestCheckResourceAttr("ipam_block.acc", "total_ips", "256"),
 					resource.TestCheckResourceAttr("ipam_block.acc", "used_ips", "0"),
 					resource.TestCheckResourceAttr("ipam_block.acc", "available_ips", "256"),
@@ -97,7 +97,7 @@ resource "ipam_block" "acc" {
 resource "ipam_environment" "acc" {
   name = "acc-block-env"
   pools = [
-    { name = "acc-pool", cidr = "10.0.0.0/8" }
+    { name = "acc-block-pool", cidr = "10.1.0.0/8" }
   ]
 }
 
@@ -107,7 +107,7 @@ data "ipam_pools" "acc" {
 
 resource "ipam_block" "acc" {
   name           = "acc-block-renamed"
-  cidr           = "10.100.0.0/24"
+  cidr           = "10.1.100.0/24"
   environment_id = ipam_environment.acc.id
   pool_id        = ipam_environment.acc.pool_ids[0]
 }
@@ -127,6 +127,7 @@ resource "ipam_block" "acc" {
 
 func TestAccAllocationResource(t *testing.T) {
 	testAccPreCheck(t)
+	testAccAllocationPreCheck(t)
 	endpoint := os.Getenv("IPAM_ENDPOINT")
 	token := os.Getenv("IPAM_TOKEN")
 
@@ -138,7 +139,7 @@ func TestAccAllocationResource(t *testing.T) {
 resource "ipam_environment" "acc" {
   name = "acc-alloc-env"
   pools = [
-    { name = "acc-pool", cidr = "10.0.0.0/8" }
+    { name = "acc-alloc-pool", cidr = "10.2.0.0/8" }
   ]
 }
 
@@ -148,7 +149,7 @@ data "ipam_pools" "acc" {
 
 resource "ipam_block" "acc" {
   name           = "acc-alloc-block"
-  cidr           = "10.101.0.0/24"
+  cidr           = "10.2.101.0/24"
   environment_id = ipam_environment.acc.id
   pool_id        = ipam_environment.acc.pool_ids[0]
 }
@@ -156,14 +157,14 @@ resource "ipam_block" "acc" {
 resource "ipam_allocation" "acc" {
   name       = "acc-alloc"
   block_name = ipam_block.acc.name
-  cidr       = "10.101.0.0/26"
+  cidr       = "10.2.101.0/26"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("ipam_allocation.acc", "id"),
 					resource.TestCheckResourceAttr("ipam_allocation.acc", "name", "acc-alloc"),
 					resource.TestCheckResourceAttr("ipam_allocation.acc", "block_name", "acc-alloc-block"),
-					resource.TestCheckResourceAttr("ipam_allocation.acc", "cidr", "10.101.0.0/26"),
+					resource.TestCheckResourceAttr("ipam_allocation.acc", "cidr", "10.2.101.0/26"),
 				),
 			},
 			{
@@ -171,7 +172,7 @@ resource "ipam_allocation" "acc" {
 resource "ipam_environment" "acc" {
   name = "acc-alloc-env"
   pools = [
-    { name = "acc-pool", cidr = "10.0.0.0/8" }
+    { name = "acc-alloc-pool", cidr = "10.2.0.0/8" }
   ]
 }
 
@@ -181,7 +182,7 @@ data "ipam_pools" "acc" {
 
 resource "ipam_block" "acc" {
   name           = "acc-alloc-block"
-  cidr           = "10.101.0.0/24"
+  cidr           = "10.2.101.0/24"
   environment_id = ipam_environment.acc.id
   pool_id        = ipam_environment.acc.pool_ids[0]
 }
@@ -189,7 +190,7 @@ resource "ipam_block" "acc" {
 resource "ipam_allocation" "acc" {
   name       = "acc-alloc-updated"
   block_name = ipam_block.acc.name
-  cidr       = "10.101.0.0/26"
+  cidr       = "10.2.101.0/26"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -207,6 +208,7 @@ resource "ipam_allocation" "acc" {
 
 func TestAccAllocationAutoResource(t *testing.T) {
 	testAccPreCheck(t)
+	testAccAllocationPreCheck(t)
 	endpoint := os.Getenv("IPAM_ENDPOINT")
 	token := os.Getenv("IPAM_TOKEN")
 
@@ -218,7 +220,7 @@ func TestAccAllocationAutoResource(t *testing.T) {
 resource "ipam_environment" "acc" {
   name = "acc-auto-alloc-env"
   pools = [
-    { name = "acc-pool", cidr = "10.0.0.0/8" }
+    { name = "acc-auto-alloc-pool", cidr = "10.3.0.0/8" }
   ]
 }
 
@@ -228,7 +230,7 @@ data "ipam_pools" "acc" {
 
 resource "ipam_block" "acc" {
   name           = "acc-auto-alloc-block"
-  cidr           = "10.104.0.0/16"
+  cidr           = "10.3.104.0/16"
   environment_id = ipam_environment.acc.id
   pool_id        = ipam_environment.acc.pool_ids[0]
 }
@@ -256,9 +258,10 @@ resource "ipam_allocation" "acc" {
 				),
 			},
 			{
-				ResourceName:      "ipam_allocation.acc",
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            "ipam_allocation.acc",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"prefix_length"},
 			},
 		},
 	})
@@ -288,6 +291,19 @@ resource "ipam_reserved_block" "acc" {
 				),
 			},
 			{
+				Config: testAccProviderConfig(endpoint, token) + `
+resource "ipam_reserved_block" "acc" {
+  name   = "acc-reserved-updated"
+  cidr   = "10.200.0.0/24"
+  reason = "acceptance test"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("ipam_reserved_block.acc", "name", "acc-reserved-updated"),
+					resource.TestCheckResourceAttr("ipam_reserved_block.acc", "cidr", "10.200.0.0/24"),
+				),
+			},
+			{
 				ResourceName:      "ipam_reserved_block.acc",
 				ImportState:       true,
 				ImportStateVerify: true,
@@ -298,6 +314,7 @@ resource "ipam_reserved_block" "acc" {
 
 func TestAccDataSources(t *testing.T) {
 	testAccPreCheck(t)
+	testAccAllocationPreCheck(t)
 	endpoint := os.Getenv("IPAM_ENDPOINT")
 	token := os.Getenv("IPAM_TOKEN")
 
@@ -309,7 +326,7 @@ func TestAccDataSources(t *testing.T) {
 resource "ipam_environment" "acc" {
   name = "acc-ds-env"
   pools = [
-    { name = "acc-pool", cidr = "10.0.0.0/8" }
+    { name = "acc-ds-pool", cidr = "10.4.0.0/8" }
   ]
 }
 
@@ -319,7 +336,7 @@ data "ipam_pools" "acc" {
 
 resource "ipam_block" "acc" {
   name           = "acc-ds-block"
-  cidr           = "10.102.0.0/24"
+  cidr           = "10.4.102.0/24"
   environment_id = ipam_environment.acc.id
   pool_id        = ipam_environment.acc.pool_ids[0]
 }
@@ -327,7 +344,7 @@ resource "ipam_block" "acc" {
 resource "ipam_allocation" "acc" {
   name       = "acc-ds-alloc"
   block_name = ipam_block.acc.name
-  cidr       = "10.102.0.0/26"
+  cidr       = "10.4.102.0/26"
 }
 
 data "ipam_environment" "acc" {
@@ -347,7 +364,9 @@ data "ipam_blocks" "acc" {
 }
 
 data "ipam_allocation" "acc" {
-  id = ipam_allocation.acc.id
+  id         = ipam_allocation.acc.id
+  name       = ipam_allocation.acc.name
+  block_name = ipam_allocation.acc.block_name
 }
 
 data "ipam_allocations" "acc" {
@@ -358,9 +377,66 @@ data "ipam_allocations" "acc" {
 					resource.TestCheckResourceAttr("data.ipam_environment.acc", "name", "acc-ds-env"),
 					resource.TestCheckResourceAttrPair("data.ipam_environment.acc", "id", "ipam_environment.acc", "id"),
 					resource.TestCheckResourceAttr("data.ipam_block.acc", "name", "acc-ds-block"),
-					resource.TestCheckResourceAttr("data.ipam_block.acc", "cidr", "10.102.0.0/24"),
+					resource.TestCheckResourceAttr("data.ipam_block.acc", "cidr", "10.4.102.0/24"),
 					resource.TestCheckResourceAttr("data.ipam_allocation.acc", "name", "acc-ds-alloc"),
-					resource.TestCheckResourceAttr("data.ipam_allocation.acc", "cidr", "10.102.0.0/26"),
+					resource.TestCheckResourceAttr("data.ipam_allocation.acc", "cidr", "10.4.102.0/26"),
+				),
+			},
+		},
+	})
+}
+
+// TestAccDataSourcesNoAllocation tests data sources that do not require allocation GET by id.
+// Run even when IPAM_RUN_ALLOCATION_TESTS is unset (e.g. when API returns "not found" for GET /api/allocations/{id}).
+func TestAccDataSourcesNoAllocation(t *testing.T) {
+	testAccPreCheck(t)
+	endpoint := os.Getenv("IPAM_ENDPOINT")
+	token := os.Getenv("IPAM_TOKEN")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccProviderConfig(endpoint, token) + `
+resource "ipam_environment" "acc" {
+  name = "acc-ds-noalloc-env"
+  pools = [
+    { name = "acc-ds-noalloc-pool", cidr = "10.5.0.0/8" }
+  ]
+}
+
+data "ipam_pools" "acc" {
+  environment_id = ipam_environment.acc.id
+}
+
+resource "ipam_block" "acc" {
+  name           = "acc-ds-noalloc-block"
+  cidr           = "10.5.102.0/24"
+  environment_id = ipam_environment.acc.id
+  pool_id        = ipam_environment.acc.pool_ids[0]
+}
+
+data "ipam_environment" "acc" {
+  id = ipam_environment.acc.id
+}
+
+data "ipam_environments" "acc" {
+  name = "acc-ds-noalloc"
+}
+
+data "ipam_block" "acc" {
+  id = ipam_block.acc.id
+}
+
+data "ipam_blocks" "acc" {
+  environment_id = ipam_environment.acc.id
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.ipam_environment.acc", "name", "acc-ds-noalloc-env"),
+					resource.TestCheckResourceAttrPair("data.ipam_environment.acc", "id", "ipam_environment.acc", "id"),
+					resource.TestCheckResourceAttr("data.ipam_block.acc", "name", "acc-ds-noalloc-block"),
+					resource.TestCheckResourceAttr("data.ipam_block.acc", "cidr", "10.5.102.0/24"),
 				),
 			},
 		},

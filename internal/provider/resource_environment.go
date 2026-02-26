@@ -165,8 +165,9 @@ func (r *EnvironmentResource) Read(ctx context.Context, req resource.ReadRequest
 }
 
 func (r *EnvironmentResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan EnvironmentResourceModel
+	var plan, state EnvironmentResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -175,8 +176,15 @@ func (r *EnvironmentResource) Update(ctx context.Context, req resource.UpdateReq
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
+	// Preserve computed pool_ids and pools from state so they remain known after apply.
 	plan.Id = types.StringValue(out.Id)
 	plan.Name = types.StringValue(out.Name)
+	if !state.PoolIds.IsNull() && !state.PoolIds.IsUnknown() {
+		plan.PoolIds = state.PoolIds
+	}
+	if !state.Pools.IsNull() && !state.Pools.IsUnknown() {
+		plan.Pools = state.Pools
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
