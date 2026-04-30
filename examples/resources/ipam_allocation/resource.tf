@@ -31,18 +31,33 @@ resource "ipam_allocation" "example" {
   cidr       = "10.0.0.0/16"
 }
 
-# Auto-allocate: next available /24 in the block (uses POST /api/allocations/auto)
-resource "ipam_allocation" "auto" {
+# Auto-allocate example 1: next available /20 in the IPv4 block.
+resource "ipam_allocation" "auto_region" {
   name           = "region-us-west-1"
+  block_name     = ipam_block.example.name
+  prefix_length  = 20
+}
+
+# Auto-allocate example 2: next available /24 in the same IPv4 block.
+# This shows allocating a smaller subnet from the remaining space.
+resource "ipam_allocation" "auto_cluster" {
+  name           = "cluster-us-west-1a"
   block_name     = ipam_block.example.name
   prefix_length  = 24
 }
 
-# IPv6 ULA allocation
+# IPv6 ULA allocation (explicit CIDR)
 resource "ipam_allocation" "ula_subnet" {
   name       = "prod-ula-subnet"
   block_name = ipam_block.example_ula.name
   cidr       = "fd00::/64"
+}
+
+# Auto-allocate example 3: next available /64 in the IPv6 ULA block.
+resource "ipam_allocation" "auto_ula_subnet" {
+  name           = "prod-ula-auto-subnet"
+  block_name     = ipam_block.example_ula.name
+  prefix_length  = 64
 }
 
 output "allocation_id" {
@@ -54,9 +69,17 @@ output "allocation_cidr" {
 }
 
 output "allocation_auto_cidr" {
-  value = ipam_allocation.auto.cidr
+  value = ipam_allocation.auto_region.cidr
+}
+
+output "allocation_auto_cluster_cidr" {
+  value = ipam_allocation.auto_cluster.cidr
 }
 
 output "allocation_ula_cidr" {
   value = ipam_allocation.ula_subnet.cidr
+}
+
+output "allocation_auto_ula_cidr" {
+  value = ipam_allocation.auto_ula_subnet.cidr
 }
