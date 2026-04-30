@@ -14,12 +14,12 @@ Hierarchy: **Environment → Pools → Blocks → Allocations**
 
 ## Authentication
 
-The provider uses an **API token** (Bearer token). Create a token in the IPAM web UI: **Admin** → **API tokens** → **Create token**. Use the token value in the provider block (keep it secret, e.g. via environment variables).
+The provider uses an **API token** (Bearer token). Create a token in the IPAM web UI: **Admin** → **API tokens** → **Create token**. Set the token in the provider block or via `IPAM_TOKEN` (keep it secret, e.g. via environment variables).
 
 ```hcl
 provider "ipam" {
   endpoint = "https://ipam.example.com"  # Base URL of the IPAM server (no trailing slash)
-  token   = var.ipam_token               # Or env: TF_VAR_ipam_token
+  # token = var.ipam_token               # Optional when IPAM_TOKEN is set
 }
 ```
 
@@ -89,7 +89,7 @@ terraform {
 
 provider "ipam" {
   endpoint = "http://localhost:8080"
-  token   = var.ipam_api_token
+  # token = var.ipam_api_token
 }
 
 resource "ipam_environment" "prod" {

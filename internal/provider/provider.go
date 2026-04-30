@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"os"
 
 	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -36,8 +37,8 @@ func (p *IpamProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 				Required:            true,
 			},
 			"token": schema.StringAttribute{
-				MarkdownDescription: "API token for authentication (Bearer token). Create tokens in the IPAM UI under Admin.",
-				Required:            true,
+				MarkdownDescription: "API token for authentication (Bearer token). Create tokens in the IPAM UI under Admin. Can also be set via IPAM_TOKEN.",
+				Optional:            true,
 				Sensitive:           true,
 			},
 		},
@@ -54,11 +55,15 @@ func (p *IpamProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		resp.Diagnostics.AddError("Missing endpoint", "endpoint is required")
 		return
 	}
-	if data.Token.IsNull() || data.Token.ValueString() == "" {
+	token := data.Token.ValueString()
+	if data.Token.IsNull() || token == "" {
+		token = os.Getenv("IPAM_TOKEN")
+	}
+	if token == "" {
 		resp.Diagnostics.AddError("Missing token", "token is required")
 		return
 	}
-	c, err := client.New(data.Endpoint.ValueString(), data.Token.ValueString(), nil)
+	c, err := client.New(data.Endpoint.ValueString(), token, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid provider configuration", err.Error())
 		return
