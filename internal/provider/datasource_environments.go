@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,7 +17,7 @@ func NewEnvironmentsDataSource() datasource.DataSource {
 }
 
 type EnvironmentsDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type EnvironmentsDataSourceModel struct {
@@ -66,9 +66,9 @@ func (d *EnvironmentsDataSource) Configure(ctx context.Context, req datasource.C
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -80,15 +80,15 @@ func (d *EnvironmentsDataSource) Read(ctx context.Context, req datasource.ReadRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := d.api.ListEnvironments(config.Name.ValueString(), 500, 0)
+	out, err := d.api.ListEnvironments(ctx, listOpts(config.Name.ValueString()))
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.Environments = make([]EnvironmentRefModel, len(out.Environments))
-	for i, e := range out.Environments {
+	config.Environments = make([]EnvironmentRefModel, len(out))
+	for i, e := range out {
 		config.Environments[i] = EnvironmentRefModel{
-			Id:   types.StringValue(e.Id),
+			Id:   types.StringValue(e.ID.String()),
 			Name: types.StringValue(e.Name),
 		}
 	}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -23,14 +23,14 @@ func NewEnvironmentResource() resource.Resource {
 }
 
 type EnvironmentResource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type EnvironmentResourceModel struct {
-	Id       types.String `tfsdk:"id"`
-	Name     types.String `tfsdk:"name"`
-	Pools    types.List   `tfsdk:"pools"`     // list of { name, cidr }
-	PoolIds  types.List   `tfsdk:"pool_ids"` // computed: UUIDs of created pools
+	Id      types.String `tfsdk:"id"`
+	Name    types.String `tfsdk:"name"`
+	Pools   types.List   `tfsdk:"pools"`    // list of { name, cidr }
+	PoolIds types.List   `tfsdk:"pool_ids"` // computed: UUIDs of created pools
 }
 
 type poolBlockModel struct {
@@ -84,9 +84,9 @@ func (r *EnvironmentResource) Configure(ctx context.Context, req resource.Config
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	r.api = api
@@ -103,29 +103,32 @@ func (r *EnvironmentResource) Create(ctx context.Context, req resource.CreateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	poolList := make([]client.PoolInput, 0, len(poolBlocks))
+	poolList := make([]ipam.PoolSpec, 0, len(poolBlocks))
 	for _, pm := range poolBlocks {
-		poolList = append(poolList, client.PoolInput{Name: pm.Name.ValueString(), CIDR: pm.Cidr.ValueString()})
+		poolList = append(poolList, ipam.PoolSpec{Name: pm.Name.ValueString(), CIDR: pm.Cidr.ValueString()})
 	}
 	if len(poolList) == 0 {
 		resp.Diagnostics.AddError("Invalid config", "at least one pool is required")
 		return
 	}
-	out, err := r.api.CreateEnvironment(plan.Name.ValueString(), poolList)
+	out, err := r.api.CreateEnvironment(ctx, ipam.CreateEnvironmentInput{
+		Name:  plan.Name.ValueString(),
+		Pools: poolList,
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(out.Id)
+	plan.Id = types.StringValue(out.ID.String())
 	plan.Name = types.StringValue(out.Name)
 	if len(out.PoolIDs) > 0 {
 		poolIdVals := make([]types.String, 0, len(out.PoolIDs))
 		for _, id := range out.PoolIDs {
-			poolIdVals = append(poolIdVals, types.StringValue(id))
+			poolIdVals = append(poolIdVals, types.StringValue(id.String()))
 		}
 		plan.PoolIds, _ = types.ListValueFrom(ctx, types.StringType, poolIdVals)
 	}
-	tflog.Trace(ctx, "created ipam_environment", map[string]interface{}{"id": out.Id})
+	tflog.Trace(ctx, "created ipam_environment", map[string]interface{}{"id": out.ID.String()})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -135,28 +138,33 @@ func (r *EnvironmentResource) Read(ctx context.Context, req resource.ReadRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.GetEnvironment(state.Id.ValueString())
+	id, diags := parseID("environment id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.GetEnvironment(ctx, id)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	state.Id = types.StringValue(out.Id)
+	state.Id = types.StringValue(out.ID.String())
 	state.Name = types.StringValue(out.Name)
-	poolsResp, err := r.api.ListPools(state.Id.ValueString())
-	if err == nil && len(poolsResp.Pools) > 0 {
+	pools, err := r.api.ListPools(ctx, &ipam.ListPoolsOptions{EnvironmentID: id})
+	if err == nil && len(pools) > 0 {
 		objType := types.ObjectType{AttrTypes: map[string]attr.Type{
 			"name": types.StringType,
 			"cidr": types.StringType,
 		}}
-		elems := make([]attr.Value, 0, len(poolsResp.Pools))
-		poolIdVals := make([]types.String, 0, len(poolsResp.Pools))
-		for _, p := range poolsResp.Pools {
+		elems := make([]attr.Value, 0, len(pools))
+		poolIdVals := make([]types.String, 0, len(pools))
+		for _, p := range pools {
 			obj, _ := types.ObjectValue(objType.AttrTypes, map[string]attr.Value{
 				"name": types.StringValue(p.Name),
 				"cidr": types.StringValue(p.CIDR),
 			})
 			elems = append(elems, obj)
-			poolIdVals = append(poolIdVals, types.StringValue(p.ID))
+			poolIdVals = append(poolIdVals, types.StringValue(p.ID.String()))
 		}
 		state.Pools = types.ListValueMust(objType, elems)
 		state.PoolIds, _ = types.ListValueFrom(ctx, types.StringType, poolIdVals)
@@ -171,13 +179,18 @@ func (r *EnvironmentResource) Update(ctx context.Context, req resource.UpdateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.UpdateEnvironment(plan.Id.ValueString(), plan.Name.ValueString())
+	id, diags := parseID("environment id", plan.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.UpdateEnvironment(ctx, id, plan.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
 	// Preserve computed pool_ids and pools from state so they remain known after apply.
-	plan.Id = types.StringValue(out.Id)
+	plan.Id = types.StringValue(out.ID.String())
 	plan.Name = types.StringValue(out.Name)
 	if !state.PoolIds.IsNull() && !state.PoolIds.IsUnknown() {
 		plan.PoolIds = state.PoolIds
@@ -194,7 +207,12 @@ func (r *EnvironmentResource) Delete(ctx context.Context, req resource.DeleteReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.api.DeleteEnvironment(state.Id.ValueString()); err != nil {
+	id, diags := parseID("environment id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.api.DeleteEnvironment(ctx, id); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 	}
 }

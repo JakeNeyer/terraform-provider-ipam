@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -18,7 +18,7 @@ func NewAllocationDataSource() datasource.DataSource {
 }
 
 type AllocationDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type AllocationDataSourceModel struct {
@@ -60,9 +60,9 @@ func (d *AllocationDataSource) Configure(ctx context.Context, req datasource.Con
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -81,40 +81,51 @@ func (d *AllocationDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		resp.Diagnostics.AddError("Invalid configuration", "Provide either `id` or both `block_name` and `name`.")
 		return
 	}
-	var out *client.AllocationResponse
+	var out *ipam.Allocation
 	if idSet {
+		id, diags := parseID("allocation id", strings.ToLower(config.Id.ValueString()))
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 		var err error
-		out, err = d.api.GetAllocation(strings.ToLower(config.Id.ValueString()))
+		out, err = d.api.GetAllocation(ctx, id)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "not found") && nameSet && blockSet {
-				list, listErr := d.api.ListAllocations(config.Name.ValueString(), config.BlockName.ValueString(), 0, 0)
+			if ipam.IsNotFound(err) && nameSet && blockSet {
+				list, listErr := d.api.ListAllocations(ctx, &ipam.ListAllocationsOptions{
+					ListOptions: ipam.ListOptions{Name: config.Name.ValueString()},
+					BlockName:   config.BlockName.ValueString(),
+				})
 				if listErr != nil {
 					resp.Diagnostics.AddError("API error", listErr.Error())
 					return
 				}
-				if len(list.Allocations) != 1 {
+				if len(list) != 1 {
 					resp.Diagnostics.AddError("API error", err.Error())
 					return
 				}
-				out = &list.Allocations[0]
+				out = &list[0]
 			} else {
 				resp.Diagnostics.AddError("API error", err.Error())
 				return
 			}
 		}
 	} else {
-		list, err := d.api.ListAllocations(config.Name.ValueString(), config.BlockName.ValueString(), 0, 0)
+		list, err := d.api.ListAllocations(ctx, &ipam.ListAllocationsOptions{
+			ListOptions: ipam.ListOptions{Name: config.Name.ValueString()},
+			BlockName:   config.BlockName.ValueString(),
+		})
 		if err != nil {
 			resp.Diagnostics.AddError("API error", err.Error())
 			return
 		}
-		if len(list.Allocations) != 1 {
+		if len(list) != 1 {
 			resp.Diagnostics.AddError("No allocation found", "List by block_name and name did not return exactly one allocation.")
 			return
 		}
-		out = &list.Allocations[0]
+		out = &list[0]
 	}
-	config.Id = types.StringValue(strings.ToLower(out.Id))
+	config.Id = types.StringValue(strings.ToLower(out.ID.String()))
 	config.Name = types.StringValue(out.Name)
 	config.BlockName = types.StringValue(out.BlockName)
 	config.Cidr = types.StringValue(out.CIDR)

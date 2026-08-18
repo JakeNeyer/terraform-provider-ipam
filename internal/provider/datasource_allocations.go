@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,13 +17,13 @@ func NewAllocationsDataSource() datasource.DataSource {
 }
 
 type AllocationsDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type AllocationsDataSourceModel struct {
-	Name        types.String           `tfsdk:"name"`
-	BlockName   types.String           `tfsdk:"block_name"`
-	Allocations []AllocationRefModel   `tfsdk:"allocations"`
+	Name        types.String         `tfsdk:"name"`
+	BlockName   types.String         `tfsdk:"block_name"`
+	Allocations []AllocationRefModel `tfsdk:"allocations"`
 }
 
 type AllocationRefModel struct {
@@ -75,9 +75,9 @@ func (d *AllocationsDataSource) Configure(ctx context.Context, req datasource.Co
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -89,15 +89,18 @@ func (d *AllocationsDataSource) Read(ctx context.Context, req datasource.ReadReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := d.api.ListAllocations(config.Name.ValueString(), config.BlockName.ValueString(), 500, 0)
+	out, err := d.api.ListAllocations(ctx, &ipam.ListAllocationsOptions{
+		ListOptions: *listOpts(config.Name.ValueString()),
+		BlockName:   config.BlockName.ValueString(),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.Allocations = make([]AllocationRefModel, len(out.Allocations))
-	for i, a := range out.Allocations {
+	config.Allocations = make([]AllocationRefModel, len(out))
+	for i, a := range out {
 		config.Allocations[i] = AllocationRefModel{
-			Id:        types.StringValue(a.Id),
+			Id:        types.StringValue(a.ID.String()),
 			Name:      types.StringValue(a.Name),
 			BlockName: types.StringValue(a.BlockName),
 			Cidr:      types.StringValue(a.CIDR),

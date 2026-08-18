@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -22,7 +22,7 @@ func NewPoolResource() resource.Resource {
 }
 
 type PoolResource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type PoolResourceModel struct {
@@ -66,9 +66,9 @@ func (r *PoolResource) Configure(ctx context.Context, req resource.ConfigureRequ
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	r.api = api
@@ -80,16 +80,25 @@ func (r *PoolResource) Create(ctx context.Context, req resource.CreateRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.CreatePool(plan.EnvironmentId.ValueString(), plan.Name.ValueString(), plan.Cidr.ValueString())
+	envID, diags := parseID("environment_id", plan.EnvironmentId.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.CreatePool(ctx, ipam.CreatePoolInput{
+		EnvironmentID: envID,
+		Name:          plan.Name.ValueString(),
+		CIDR:          plan.Cidr.ValueString(),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(out.ID)
-	plan.EnvironmentId = types.StringValue(out.EnvironmentID)
+	plan.Id = types.StringValue(out.ID.String())
+	plan.EnvironmentId = types.StringValue(idString(out.EnvironmentID))
 	plan.Name = types.StringValue(out.Name)
 	plan.Cidr = types.StringValue(out.CIDR)
-	tflog.Trace(ctx, "created ipam_pool", map[string]interface{}{"id": out.ID})
+	tflog.Trace(ctx, "created ipam_pool", map[string]interface{}{"id": out.ID.String()})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -99,13 +108,18 @@ func (r *PoolResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.GetPool(state.Id.ValueString())
+	id, diags := parseID("pool id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.GetPool(ctx, id)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	state.Id = types.StringValue(out.ID)
-	state.EnvironmentId = types.StringValue(out.EnvironmentID)
+	state.Id = types.StringValue(out.ID.String())
+	state.EnvironmentId = types.StringValue(idString(out.EnvironmentID))
 	state.Name = types.StringValue(out.Name)
 	state.Cidr = types.StringValue(out.CIDR)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -117,13 +131,18 @@ func (r *PoolResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.UpdatePool(plan.Id.ValueString(), plan.Name.ValueString(), plan.Cidr.ValueString())
+	id, diags := parseID("pool id", plan.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.UpdatePool(ctx, id, plan.Name.ValueString(), plan.Cidr.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(out.ID)
-	plan.EnvironmentId = types.StringValue(out.EnvironmentID)
+	plan.Id = types.StringValue(out.ID.String())
+	plan.EnvironmentId = types.StringValue(idString(out.EnvironmentID))
 	plan.Name = types.StringValue(out.Name)
 	plan.Cidr = types.StringValue(out.CIDR)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -135,7 +154,12 @@ func (r *PoolResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.api.DeletePool(state.Id.ValueString()); err != nil {
+	id, diags := parseID("pool id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.api.DeletePool(ctx, id); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 	}
 }

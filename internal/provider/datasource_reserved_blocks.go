@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,7 +17,7 @@ func NewReservedBlocksDataSource() datasource.DataSource {
 }
 
 type ReservedBlocksDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type ReservedBlocksDataSourceModel struct {
@@ -76,9 +76,9 @@ func (d *ReservedBlocksDataSource) Configure(ctx context.Context, req datasource
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -90,19 +90,19 @@ func (d *ReservedBlocksDataSource) Read(ctx context.Context, req datasource.Read
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := d.api.ListReservedBlocks("")
+	out, err := d.api.ListReservedBlocks(ctx, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.ReservedBlocks = make([]ReservedBlockRefModel, len(out.ReservedBlocks))
-	for i, b := range out.ReservedBlocks {
+	config.ReservedBlocks = make([]ReservedBlockRefModel, len(out))
+	for i, b := range out {
 		config.ReservedBlocks[i] = ReservedBlockRefModel{
-			Id:        types.StringValue(b.ID),
+			Id:        types.StringValue(b.ID.String()),
 			Name:      types.StringValue(b.Name),
 			Cidr:      types.StringValue(b.CIDR),
 			Reason:    types.StringValue(b.Reason),
-			CreatedAt: types.StringValue(b.CreatedAt),
+			CreatedAt: types.StringValue(rfc3339(b.CreatedAt)),
 		}
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

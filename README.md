@@ -1,6 +1,6 @@
 # Terraform Provider for IPAM
 
-This [Terraform](https://www.terraform.io) provider manages resources in an [IPAM](https://github.com/JakeNeyer/ipam) instance: environments (with required initial pool), pools, network blocks, allocations, and reserved blocks. 
+This [Terraform](https://www.terraform.io) provider manages resources in an [IPAM](https://github.com/JakeNeyer/ipam) instance: environments (with required initial pool), pools, network blocks, allocations, and reserved blocks. It talks to the IPAM HTTP API through the [ipam-go](https://github.com/JakeNeyer/ipam-go) client SDK. 
 
 
 Hierarchy: **Environment → Pools → Blocks → Allocations**
@@ -145,7 +145,7 @@ For publishing to the Terraform Registry (including GPG signing of checksums), s
 ## Development
 
 - Run unit tests (no live server):  
-  `go test ./internal/client/ -v` and `go test ./internal/provider/ -v -short`
+  `go test ./internal/provider/ -v -short`
 - Run acceptance tests (requires TF_ACC=1, a running IPAM server, and admin API token):  
   `TF_ACC=1 IPAM_ENDPOINT=http://localhost:5173 IPAM_TOKEN=your-token go test -v -count=1 -run TestAcc ./internal/provider/...`  
   Or use the script: `TF_ACC=1 IPAM_TOKEN=your-token ./scripts/acc-test.sh`
@@ -167,5 +167,6 @@ For publishing to the Terraform Registry (including GPG signing of checksums), s
 
 ## References
 
+- [IPAM Go client SDK](https://github.com/JakeNeyer/ipam-go)
 - [Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework)
 - [Terraform Plugin Framework tutorials](https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework)

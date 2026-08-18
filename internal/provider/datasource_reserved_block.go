@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,7 +17,7 @@ func NewReservedBlockDataSource() datasource.DataSource {
 }
 
 type ReservedBlockDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type ReservedBlockDataSourceModel struct {
@@ -64,9 +64,9 @@ func (d *ReservedBlockDataSource) Configure(ctx context.Context, req datasource.
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -78,22 +78,26 @@ func (d *ReservedBlockDataSource) Read(ctx context.Context, req datasource.ReadR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	list, err := d.api.ListReservedBlocks("")
+	id, diags := parseID("reserved block id", config.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	list, err := d.api.ListReservedBlocks(ctx, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	id := config.Id.ValueString()
-	for _, b := range list.ReservedBlocks {
+	for _, b := range list {
 		if b.ID == id {
-			config.Id = types.StringValue(b.ID)
+			config.Id = types.StringValue(b.ID.String())
 			config.Name = types.StringValue(b.Name)
 			config.Cidr = types.StringValue(b.CIDR)
 			config.Reason = types.StringValue(b.Reason)
-			config.CreatedAt = types.StringValue(b.CreatedAt)
+			config.CreatedAt = types.StringValue(rfc3339(b.CreatedAt))
 			resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 			return
 		}
 	}
-	resp.Diagnostics.AddError("Not found", "reserved block not found: "+id)
+	resp.Diagnostics.AddError("Not found", "reserved block not found: "+id.String())
 }

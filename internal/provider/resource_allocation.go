@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -24,7 +24,7 @@ func NewAllocationResource() resource.Resource {
 }
 
 type AllocationResource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type AllocationResourceModel struct {
@@ -78,9 +78,9 @@ func (r *AllocationResource) Configure(ctx context.Context, req resource.Configu
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	r.api = api
@@ -107,21 +107,28 @@ func (r *AllocationResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	var out *client.AllocationResponse
+	var out *ipam.Allocation
 	var err error
 
 	if hasPrefix {
-		prefixLength := int(plan.PrefixLength.ValueInt64())
-		out, err = r.api.AutoAllocate(name, blockName, prefixLength)
+		out, err = r.api.AutoAllocate(ctx, ipam.AutoAllocateInput{
+			Name:         name,
+			BlockName:    blockName,
+			PrefixLength: int(plan.PrefixLength.ValueInt64()),
+		})
 	} else {
-		out, err = r.api.CreateAllocation(name, blockName, plan.Cidr.ValueString())
+		out, err = r.api.CreateAllocation(ctx, ipam.CreateAllocationInput{
+			Name:      name,
+			BlockName: blockName,
+			CIDR:      plan.Cidr.ValueString(),
+		})
 	}
 
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(strings.ToLower(out.Id))
+	plan.Id = types.StringValue(strings.ToLower(out.ID.String()))
 	plan.Name = types.StringValue(out.Name)
 	plan.BlockName = types.StringValue(out.BlockName)
 	plan.Cidr = types.StringValue(out.CIDR)
@@ -135,37 +142,45 @@ func (r *AllocationResource) Read(ctx context.Context, req resource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.GetAllocation(state.Id.ValueString())
+	id, diags := parseID("allocation id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.GetAllocation(ctx, id)
 	if err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+		if !ipam.IsNotFound(err) {
 			resp.Diagnostics.AddError("API error", err.Error())
 			return
 		}
 		// Fallback: some IPAM APIs do not support GET /api/allocations/{id}; find by block_name + name.
-		list, listErr := r.api.ListAllocations(state.Name.ValueString(), state.BlockName.ValueString(), 0, 0)
+		list, listErr := r.api.ListAllocations(ctx, &ipam.ListAllocationsOptions{
+			ListOptions: ipam.ListOptions{Name: state.Name.ValueString()},
+			BlockName:   state.BlockName.ValueString(),
+		})
 		if listErr != nil {
 			resp.Diagnostics.AddError("API error", listErr.Error())
 			return
 		}
-		switch n := len(list.Allocations); n {
+		switch n := len(list); n {
 		case 0:
 			resp.State.RemoveResource(ctx)
 			return
 		case 1:
-			out = &list.Allocations[0]
+			out = &list[0]
 		default:
-			for i := range list.Allocations {
-				if strings.EqualFold(list.Allocations[i].Id, state.Id.ValueString()) {
-					out = &list.Allocations[i]
+			for i := range list {
+				if strings.EqualFold(list[i].ID.String(), state.Id.ValueString()) {
+					out = &list[i]
 					break
 				}
 			}
 			if out == nil {
-				out = &list.Allocations[0]
+				out = &list[0]
 			}
 		}
 	}
-	state.Id = types.StringValue(strings.ToLower(out.Id))
+	state.Id = types.StringValue(strings.ToLower(out.ID.String()))
 	state.Name = types.StringValue(out.Name)
 	state.BlockName = types.StringValue(out.BlockName)
 	state.Cidr = types.StringValue(out.CIDR)
@@ -183,27 +198,34 @@ func (r *AllocationResource) Update(ctx context.Context, req resource.UpdateRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id := plan.Id.ValueString()
-	out, err := r.api.UpdateAllocation(id, plan.Name.ValueString())
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "not found") {
+	id, diags := parseID("allocation id", plan.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.UpdateAllocation(ctx, id, plan.Name.ValueString())
+	if err != nil && ipam.IsNotFound(err) {
 		// Fallback: resolve allocation by block_name + prior name (current name on server before update).
-		list, listErr := r.api.ListAllocations(state.Name.ValueString(), plan.BlockName.ValueString(), 0, 0)
+		list, listErr := r.api.ListAllocations(ctx, &ipam.ListAllocationsOptions{
+			ListOptions: ipam.ListOptions{Name: state.Name.ValueString()},
+			BlockName:   plan.BlockName.ValueString(),
+		})
 		if listErr != nil {
 			resp.Diagnostics.AddError("API error", listErr.Error())
 			return
 		}
-		if len(list.Allocations) != 1 {
+		if len(list) != 1 {
 			resp.Diagnostics.AddError("API error", err.Error())
 			return
 		}
-		id = list.Allocations[0].Id
-		out, err = r.api.UpdateAllocation(id, plan.Name.ValueString())
+		id = list[0].ID
+		out, err = r.api.UpdateAllocation(ctx, id, plan.Name.ValueString())
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(strings.ToLower(out.Id))
+	plan.Id = types.StringValue(strings.ToLower(out.ID.String()))
 	plan.Name = types.StringValue(out.Name)
 	plan.BlockName = types.StringValue(out.BlockName)
 	plan.Cidr = types.StringValue(out.CIDR)
@@ -216,8 +238,13 @@ func (r *AllocationResource) Delete(ctx context.Context, req resource.DeleteRequ
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.api.DeleteAllocation(state.Id.ValueString()); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+	id, diags := parseID("allocation id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.api.DeleteAllocation(ctx, id); err != nil {
+		if ipam.IsNotFound(err) {
 			return
 		}
 		resp.Diagnostics.AddError("API error", err.Error())

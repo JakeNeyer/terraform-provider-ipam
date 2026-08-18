@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,7 +17,7 @@ func NewPoolDataSource() datasource.DataSource {
 }
 
 type PoolDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type PoolDataSourceModel struct {
@@ -59,9 +59,9 @@ func (d *PoolDataSource) Configure(ctx context.Context, req datasource.Configure
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -73,13 +73,18 @@ func (d *PoolDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := d.api.GetPool(config.Id.ValueString())
+	id, diags := parseID("pool id", config.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := d.api.GetPool(ctx, id)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.Id = types.StringValue(out.ID)
-	config.EnvironmentId = types.StringValue(out.EnvironmentID)
+	config.Id = types.StringValue(out.ID.String())
+	config.EnvironmentId = types.StringValue(idString(out.EnvironmentID))
 	config.Name = types.StringValue(out.Name)
 	config.Cidr = types.StringValue(out.CIDR)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

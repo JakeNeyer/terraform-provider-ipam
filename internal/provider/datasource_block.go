@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,7 +17,7 @@ func NewBlockDataSource() datasource.DataSource {
 }
 
 type BlockDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type BlockDataSourceModel struct {
@@ -74,9 +74,9 @@ func (d *BlockDataSource) Configure(ctx context.Context, req datasource.Configur
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -88,17 +88,22 @@ func (d *BlockDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := d.api.GetBlock(config.Id.ValueString())
+	id, diags := parseID("block id", config.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := d.api.GetBlock(ctx, id)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.Id = types.StringValue(out.ID)
+	config.Id = types.StringValue(out.ID.String())
 	config.Name = types.StringValue(out.Name)
 	config.Cidr = types.StringValue(out.CIDR)
 	config.TotalIps = types.StringValue(out.TotalIPs)
 	config.UsedIps = types.StringValue(out.UsedIPs)
-	config.AvailableIps = types.StringValue(out.Available)
-	config.EnvironmentId = types.StringValue(out.EnvironmentID)
+	config.AvailableIps = types.StringValue(out.AvailableIPs)
+	config.EnvironmentId = types.StringValue(idString(out.EnvironmentID))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }

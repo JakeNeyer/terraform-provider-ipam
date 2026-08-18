@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -23,7 +23,7 @@ func NewReservedBlockResource() resource.Resource {
 }
 
 type ReservedBlockResource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type ReservedBlockResourceModel struct {
@@ -73,9 +73,9 @@ func (r *ReservedBlockResource) Configure(ctx context.Context, req resource.Conf
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	r.api = api
@@ -87,20 +87,21 @@ func (r *ReservedBlockResource) Create(ctx context.Context, req resource.CreateR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	name := plan.Name.ValueString()
-	cidr := strings.TrimSpace(plan.Cidr.ValueString())
-	reason := plan.Reason.ValueString()
-	out, err := r.api.CreateReservedBlock(name, cidr, reason)
+	out, err := r.api.CreateReservedBlock(ctx, ipam.CreateReservedBlockInput{
+		Name:   plan.Name.ValueString(),
+		CIDR:   strings.TrimSpace(plan.Cidr.ValueString()),
+		Reason: plan.Reason.ValueString(),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.Id = types.StringValue(out.ID)
+	plan.Id = types.StringValue(out.ID.String())
 	plan.Name = types.StringValue(out.Name)
 	plan.Cidr = types.StringValue(out.CIDR)
 	plan.Reason = types.StringValue(out.Reason)
-	plan.CreatedAt = types.StringValue(out.CreatedAt)
-	tflog.Trace(ctx, "created ipam_reserved_block", map[string]interface{}{"id": out.ID})
+	plan.CreatedAt = types.StringValue(rfc3339(out.CreatedAt))
+	tflog.Trace(ctx, "created ipam_reserved_block", map[string]interface{}{"id": out.ID.String()})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -110,24 +111,28 @@ func (r *ReservedBlockResource) Read(ctx context.Context, req resource.ReadReque
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	list, err := r.api.ListReservedBlocks("")
+	id, diags := parseID("reserved block id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	list, err := r.api.ListReservedBlocks(ctx, nil)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	id := state.Id.ValueString()
-	for _, b := range list.ReservedBlocks {
+	for _, b := range list {
 		if b.ID == id {
-			state.Id = types.StringValue(b.ID)
+			state.Id = types.StringValue(b.ID.String())
 			state.Name = types.StringValue(b.Name)
 			state.Cidr = types.StringValue(b.CIDR)
 			state.Reason = types.StringValue(b.Reason)
-			state.CreatedAt = types.StringValue(b.CreatedAt)
+			state.CreatedAt = types.StringValue(rfc3339(b.CreatedAt))
 			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 			return
 		}
 	}
-	resp.Diagnostics.AddError("Reserved block not found", "id: "+id)
+	resp.Diagnostics.AddError("Reserved block not found", "id: "+id.String())
 }
 
 func (r *ReservedBlockResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -137,9 +142,14 @@ func (r *ReservedBlockResource) Update(ctx context.Context, req resource.UpdateR
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	id, diags := parseID("reserved block id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	// API supports in-place update of name only; cidr and reason are create-only.
 	if plan.Name.ValueString() != state.Name.ValueString() {
-		out, err := r.api.UpdateReservedBlock(state.Id.ValueString(), plan.Name.ValueString())
+		out, err := r.api.UpdateReservedBlock(ctx, id, plan.Name.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("API error", err.Error())
 			return
@@ -159,7 +169,12 @@ func (r *ReservedBlockResource) Delete(ctx context.Context, req resource.DeleteR
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.api.DeleteReservedBlock(state.Id.ValueString()); err != nil {
+	id, diags := parseID("reserved block id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.api.DeleteReservedBlock(ctx, id); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 	}
 }

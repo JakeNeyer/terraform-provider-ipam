@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -63,7 +63,7 @@ func (p *IpamProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		resp.Diagnostics.AddError("Missing token", "token is required")
 		return
 	}
-	c, err := client.New(data.Endpoint.ValueString(), token, nil)
+	c, err := ipam.New(data.Endpoint.ValueString(), ipam.WithToken(token))
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid provider configuration", err.Error())
 		return

@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -22,14 +23,14 @@ func NewBlockResource() resource.Resource {
 }
 
 type BlockResource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type BlockResourceModel struct {
 	Id            types.String `tfsdk:"id"`
 	Name          types.String `tfsdk:"name"`
 	Cidr          types.String `tfsdk:"cidr"`
-	TotalIps      types.String `tfsdk:"total_ips"`   // string: derive-only, supports IPv6 /64 etc.
+	TotalIps      types.String `tfsdk:"total_ips"` // string: derive-only, supports IPv6 /64 etc.
 	UsedIps       types.String `tfsdk:"used_ips"`
 	AvailableIps  types.String `tfsdk:"available_ips"`
 	EnvironmentId types.String `tfsdk:"environment_id"`
@@ -86,9 +87,9 @@ func (r *BlockResource) Configure(ctx context.Context, req resource.ConfigureReq
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	r.api = api
@@ -100,19 +101,30 @@ func (r *BlockResource) Create(ctx context.Context, req resource.CreateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	envID := plan.EnvironmentId.ValueString()
-	var poolID *string
-	if !plan.PoolId.IsNull() && plan.PoolId.ValueString() != "" {
-		v := plan.PoolId.ValueString()
-		poolID = &v
+	in := ipam.CreateBlockInput{
+		Name: plan.Name.ValueString(),
+		CIDR: plan.Cidr.ValueString(),
 	}
-	out, err := r.api.CreateBlock(plan.Name.ValueString(), plan.Cidr.ValueString(), envID, poolID)
+	if envID := plan.EnvironmentId.ValueString(); envID != "" {
+		id, diags := parseID("environment_id", envID)
+		resp.Diagnostics.Append(diags...)
+		in.EnvironmentID = id
+	}
+	if poolID := plan.PoolId.ValueString(); poolID != "" {
+		id, diags := parseID("pool_id", poolID)
+		resp.Diagnostics.Append(diags...)
+		in.PoolID = id
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.CreateBlock(ctx, in)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
 	r.setModelFromAPI(&plan, out)
-	tflog.Trace(ctx, "created ipam_block", map[string]interface{}{"id": out.ID})
+	tflog.Trace(ctx, "created ipam_block", map[string]interface{}{"id": out.ID.String()})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -122,7 +134,12 @@ func (r *BlockResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := r.api.GetBlock(state.Id.ValueString())
+	id, diags := parseID("block id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.GetBlock(ctx, id)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
@@ -137,17 +154,23 @@ func (r *BlockResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	var envID *string
-	if !plan.EnvironmentId.IsNull() && plan.EnvironmentId.ValueString() != "" {
-		v := plan.EnvironmentId.ValueString()
-		envID = &v
+	id, diags := parseID("block id", plan.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	in := ipam.UpdateBlockInput{Name: plan.Name.ValueString()}
+	if envID := plan.EnvironmentId.ValueString(); envID != "" {
+		eid, d := parseID("environment_id", envID)
+		resp.Diagnostics.Append(d...)
+		in.EnvironmentID = eid
 	}
-	var poolID *string
-	if !plan.PoolId.IsNull() && !plan.PoolId.IsUnknown() && plan.PoolId.ValueString() != "" {
-		v := plan.PoolId.ValueString()
-		poolID = &v
+	if poolID := plan.PoolId.ValueString(); !plan.PoolId.IsUnknown() && poolID != "" {
+		pid, d := parseID("pool_id", poolID)
+		resp.Diagnostics.Append(d...)
+		in.PoolID = pid
 	}
-	out, err := r.api.UpdateBlock(plan.Id.ValueString(), plan.Name.ValueString(), envID, poolID)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := r.api.UpdateBlock(ctx, id, in)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
@@ -162,7 +185,12 @@ func (r *BlockResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.api.DeleteBlock(state.Id.ValueString()); err != nil {
+	id, diags := parseID("block id", state.Id.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.api.DeleteBlock(ctx, id); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 	}
 }
@@ -171,17 +199,17 @@ func (r *BlockResource) ImportState(ctx context.Context, req resource.ImportStat
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func (r *BlockResource) setModelFromAPI(m *BlockResourceModel, out *client.BlockResponse) {
-	m.Id = types.StringValue(out.ID)
+func (r *BlockResource) setModelFromAPI(m *BlockResourceModel, out *ipam.Block) {
+	m.Id = types.StringValue(out.ID.String())
 	m.Name = types.StringValue(out.Name)
 	m.Cidr = types.StringValue(out.CIDR)
-	m.EnvironmentId = types.StringValue(out.EnvironmentID)
-	if out.PoolID != nil && *out.PoolID != "" {
-		m.PoolId = types.StringValue(*out.PoolID)
+	m.EnvironmentId = types.StringValue(idString(out.EnvironmentID))
+	if out.PoolID != uuid.Nil {
+		m.PoolId = types.StringValue(out.PoolID.String())
 	} else {
 		m.PoolId = types.StringNull()
 	}
 	m.TotalIps = types.StringValue(out.TotalIPs)
 	m.UsedIps = types.StringValue(out.UsedIPs)
-	m.AvailableIps = types.StringValue(out.Available)
+	m.AvailableIps = types.StringValue(out.AvailableIPs)
 }

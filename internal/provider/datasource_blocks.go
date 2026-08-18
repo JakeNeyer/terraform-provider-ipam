@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,13 +17,13 @@ func NewBlocksDataSource() datasource.DataSource {
 }
 
 type BlocksDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type BlocksDataSourceModel struct {
-	Name          types.String   `tfsdk:"name"`
-	EnvironmentId types.String   `tfsdk:"environment_id"`
-	OrphanedOnly  types.Bool     `tfsdk:"orphaned_only"`
+	Name          types.String    `tfsdk:"name"`
+	EnvironmentId types.String    `tfsdk:"environment_id"`
+	OrphanedOnly  types.Bool      `tfsdk:"orphaned_only"`
 	Blocks        []BlockRefModel `tfsdk:"blocks"`
 }
 
@@ -92,9 +92,9 @@ func (d *BlocksDataSource) Configure(ctx context.Context, req datasource.Configu
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -106,23 +106,33 @@ func (d *BlocksDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	envID := config.EnvironmentId.ValueString()
-	orphanedOnly := config.OrphanedOnly.ValueBool()
-	out, err := d.api.ListBlocks(config.Name.ValueString(), envID, orphanedOnly, 500, 0)
+	opts := &ipam.ListBlocksOptions{
+		ListOptions:  *listOpts(config.Name.ValueString()),
+		OrphanedOnly: config.OrphanedOnly.ValueBool(),
+	}
+	if envID := config.EnvironmentId.ValueString(); envID != "" {
+		id, diags := parseID("environment_id", envID)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		opts.EnvironmentID = id
+	}
+	out, err := d.api.ListBlocks(ctx, opts)
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.Blocks = make([]BlockRefModel, len(out.Blocks))
-	for i, b := range out.Blocks {
+	config.Blocks = make([]BlockRefModel, len(out))
+	for i, b := range out {
 		config.Blocks[i] = BlockRefModel{
-			Id:            types.StringValue(b.ID),
+			Id:            types.StringValue(b.ID.String()),
 			Name:          types.StringValue(b.Name),
 			Cidr:          types.StringValue(b.CIDR),
 			TotalIps:      types.StringValue(b.TotalIPs),
 			UsedIps:       types.StringValue(b.UsedIPs),
-			AvailableIps:  types.StringValue(b.Available),
-			EnvironmentId: types.StringValue(b.EnvironmentID),
+			AvailableIps:  types.StringValue(b.AvailableIPs),
+			EnvironmentId: types.StringValue(idString(b.EnvironmentID)),
 		}
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

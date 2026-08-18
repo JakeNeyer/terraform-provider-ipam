@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/JakeNeyer/terraform-provider-ipam/internal/client"
+	"github.com/JakeNeyer/ipam-go/ipam"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -17,12 +17,12 @@ func NewPoolsDataSource() datasource.DataSource {
 }
 
 type PoolsDataSource struct {
-	api *client.Client
+	api *ipam.Client
 }
 
 type PoolsDataSourceModel struct {
-	EnvironmentId types.String       `tfsdk:"environment_id"`
-	Pools         []PoolRefModel      `tfsdk:"pools"`
+	EnvironmentId types.String   `tfsdk:"environment_id"`
+	Pools         []PoolRefModel `tfsdk:"pools"`
 }
 
 type PoolRefModel struct {
@@ -76,9 +76,9 @@ func (d *PoolsDataSource) Configure(ctx context.Context, req datasource.Configur
 	if req.ProviderData == nil {
 		return
 	}
-	api, ok := req.ProviderData.(*client.Client)
+	api, ok := req.ProviderData.(*ipam.Client)
 	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *client.Client, got %T", req.ProviderData))
+		resp.Diagnostics.AddError("Unexpected provider type", fmt.Sprintf("Expected *ipam.Client, got %T", req.ProviderData))
 		return
 	}
 	d.api = api
@@ -90,16 +90,21 @@ func (d *PoolsDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	out, err := d.api.ListPools(config.EnvironmentId.ValueString())
+	envID, diags := parseID("environment_id", config.EnvironmentId.ValueString())
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	out, err := d.api.ListPools(ctx, &ipam.ListPoolsOptions{EnvironmentID: envID})
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	config.Pools = make([]PoolRefModel, len(out.Pools))
-	for i, p := range out.Pools {
+	config.Pools = make([]PoolRefModel, len(out))
+	for i, p := range out {
 		config.Pools[i] = PoolRefModel{
-			Id:            types.StringValue(p.ID),
-			EnvironmentId: types.StringValue(p.EnvironmentID),
+			Id:            types.StringValue(p.ID.String()),
+			EnvironmentId: types.StringValue(idString(p.EnvironmentID)),
 			Name:          types.StringValue(p.Name),
 			Cidr:          types.StringValue(p.CIDR),
 		}
